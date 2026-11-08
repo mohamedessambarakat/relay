@@ -1,6 +1,7 @@
 import { spawn, execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import type { RunnerPort } from "../server/app.ts";
@@ -80,7 +81,7 @@ export class Runner implements RunnerPort {
 
   constructor(opts: RunnerOptions) {
     this.o = {
-      launch: defaultLauncher(process.env.CLAUDE_BIN || "claude"),
+      launch: defaultLauncher(claudeBin()),
       prepare: prepareWorkspace,
       idleMs: IDLE_MS,
       mcpCommand: opts.mcpCommand ?? defaultMcpCommand(),
@@ -454,6 +455,16 @@ export class Runner implements RunnerPort {
     const busy = this.runs.size > 0 || this.o.store.queueOrder().length > 0 || this.limitUntil !== null;
     this.o.keepAwake.set(busy);
   }
+}
+
+/**
+ * Relay may start at login with the plain Windows PATH, which doesn't include the
+ * Claude CLI's install folder, so look in its default location before relying on PATH.
+ */
+export function claudeBin(): string {
+  if (process.env.CLAUDE_BIN) return process.env.CLAUDE_BIN;
+  const local = path.join(os.homedir(), ".local", "bin", process.platform === "win32" ? "claude.exe" : "claude");
+  return fs.existsSync(local) ? local : "claude";
 }
 
 function defaultMcpCommand() {

@@ -5,7 +5,7 @@ import { openDb } from "./db.ts";
 import { EventBus } from "./events.ts";
 import { Store } from "./store.ts";
 import { createApp } from "./app.ts";
-import { Runner } from "../agent/runner.ts";
+import { Runner, claudeBin } from "../agent/runner.ts";
 import { ModelSettings } from "../agent/models.ts";
 import { ntfyNotifier } from "../agent/notify.ts";
 import { KeepAwake } from "../agent/keepawake.ts";
@@ -14,7 +14,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const envFile = path.join(root, ".env");
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
 
-const port = Number(process.env.RELAY_PORT ?? 4317);
+const port = Number(process.env.RELAY_PORT ?? 8000);
 const dataDir = path.join(root, "data");
 const boardDir = path.join(root, "dist", "board");
 
@@ -44,10 +44,20 @@ const app = createApp({
 });
 
 // Localhost only: anything that can reach Relay can run Claude with full permissions.
-serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => {
+const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => {
   console.log(`[relay] listening on http://localhost:${port}`);
+  console.log(`[relay] Claude CLI: ${claudeBin()}`);
   if (!notifier.enabled) console.log("[relay] NTFY_TOPIC isn't set, so phone pushes are off");
   runner.recover();
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  console.error(
+    err.code === "EADDRINUSE"
+      ? `[relay] Port ${port} is already in use. Is Relay already running? Stop it, or set RELAY_PORT in .env.`
+      : `[relay] Server error: ${err.message}`,
+  );
+  process.exit(1);
 });
 
 const shutdown = () => {

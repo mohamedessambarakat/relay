@@ -8,11 +8,12 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 - Package manager: pnpm (lockfile decides)
 
 ## Commands
-- Dev: `pnpm dev` (server on :4317 with reload, board on :5173 proxying /api)
+- Dev: `pnpm dev` (server on :8000 with reload, board on :5173 proxying /api)
 - Build: `pnpm build` (board into `dist/board`); run: `pnpm start` (tsx, serves the built board)
 - Test: `pnpm test`
 - Lint/typecheck: `pnpm lint`, `pnpm typecheck`
-- Auto-start: `scripts/install-autostart.ps1` / `uninstall-autostart.ps1` (Startup-folder shortcut)
+- Auto-start: `scripts/install-autostart.ps1` / `uninstall-autostart.ps1` (Startup-folder shortcut); stop a running Relay: `scripts/stop.ps1`; desktop shortcut: `scripts/install-desktop-shortcut.ps1` (runs `open-relay.ps1`)
+- Port: fixed at 8000 (`RELAY_PORT` overrides); Relay exits with a clear error if the port is taken
 
 ## Structure
 - `src/server/`: API, database, ticket rules

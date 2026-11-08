@@ -12,7 +12,7 @@ Needs Node 24+, pnpm, and the Claude Code CLI signed in to your subscription.
 pnpm install
 cp .env.example .env   # then set NTFY_TOPIC to a long random name
 pnpm build
-pnpm start             # http://localhost:4317
+pnpm start             # http://localhost:8000
 ```
 
 Start at Windows login (adds a shortcut to your Startup folder; output goes to `data/relay.log`):
@@ -22,11 +22,30 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 # undo: scripts\uninstall-autostart.ps1
 ```
 
+## Desktop shortcut
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scriptsinstall-desktop-shortcut.ps1
+```
+
+Clicking **Relay** on the desktop starts Relay hidden in the background if it isn't running, then opens the board. Closing the browser doesn't stop it; `scriptsstop.ps1` does.
+
+## Run it by hand
+
+Relay already runs in the background after login. To run it in a terminal instead (to watch its output), stop the background copy first:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scriptsstop.ps1
+pnpm start            # Ctrl+C to stop
+```
+
+To bring the background copy back without logging out, double-click `Relay.lnk` in `shell:startup`.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Server with reload on :4317, board with hot reload on :5173 |
+| `pnpm dev` | Server with reload on :8000, board with hot reload on :5173 |
 | `pnpm build` | Builds the board into `dist/board` |
 | `pnpm start` | Runs Relay (serves the built board) |
 | `pnpm test` | Vitest |
