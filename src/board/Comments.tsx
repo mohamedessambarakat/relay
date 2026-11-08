@@ -74,32 +74,6 @@ export const Comments = memo(function Comments({ ticketId, status, runState, com
 
   return (
     <div className="flex flex-col gap-3">
-      {comments.length === 0 ? (
-        <p className="text-sm text-muted">No comments yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {comments.map((c) => (
-            <li key={c.id} className={`flex gap-2.5 ${c.id > baseline ? "animate-rise-in" : ""}`}>
-              <span
-                aria-hidden="true"
-                className={`grid size-6.5 shrink-0 place-items-center rounded-full border text-[11px] font-bold ${
-                  c.author === "agent" ? "border-transparent bg-accent text-accent-text" : "border-line bg-card text-muted"
-                }`}
-              >
-                {c.author === "user" ? "Y" : c.author === "agent" ? "A" : "S"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="mb-0.5 text-xs text-muted">
-                  <b className={c.author === "system" ? "font-semibold" : "font-semibold text-text"}>{WHO[c.author]}</b> · {formatDateTime(c.createdAt)}
-                </div>
-                <div className={`font-ui text-sm ${c.author === "system" ? "text-muted" : ""}`}>
-                  <Markdown mentions>{c.body}</Markdown>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="flex flex-col gap-2">
         <label htmlFor={inputId} className="text-xs text-muted">
           Add a comment
@@ -133,6 +107,33 @@ export const Comments = memo(function Comments({ ticketId, status, runState, com
           <span className="text-xs text-muted">Ctrl+Enter to send.</span>
         </div>
       </div>
+      {comments.length === 0 ? (
+        <p className="text-sm text-muted">No comments yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {/* Newest first; the comment box sits above, next to the newest. */}
+          {[...comments].reverse().map((c) => (
+            <li key={c.id} className={`flex gap-2.5 ${c.id > baseline ? "animate-rise-in" : ""}`}>
+              <span
+                aria-hidden="true"
+                className={`grid size-6.5 shrink-0 place-items-center rounded-full border text-[11px] font-bold ${
+                  c.author === "agent" ? "border-transparent bg-accent text-accent-text" : "border-line bg-card text-muted"
+                }`}
+              >
+                {c.author === "user" ? "Y" : c.author === "agent" ? "A" : "S"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-0.5 text-xs text-muted">
+                  <b className={c.author === "system" ? "font-semibold" : "font-semibold text-text"}>{WHO[c.author]}</b> · {formatDateTime(c.createdAt)}
+                </div>
+                <div className={`font-ui text-sm ${c.author === "system" ? "text-muted" : ""}`}>
+                  <Markdown mentions>{c.body}</Markdown>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 });
