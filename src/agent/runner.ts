@@ -92,13 +92,17 @@ export class Runner implements RunnerPort {
 
   /** After a restart: anything that was running or queued goes back in the queue. */
   recover() {
-    for (const info of this.o.store.staleRuns()) {
-      if (info.status !== "agent_ready") {
-        this.o.store.setRunState(info.id, "idle");
+    const { store } = this.o;
+    for (const info of store.staleRuns()) {
+      if (info.status !== "agent_ready" && info.status !== "in_progress") {
+        store.setRunState(info.id, "idle");
         continue;
       }
-      if (info.runState === "running" || info.runState === "waiting_limit") this.pending.set(info.id, { kind: "restart" });
-      this.o.store.setRunState(info.id, "queued");
+      if (info.runState === "running" || info.runState === "waiting_limit" || info.status === "in_progress") {
+        this.pending.set(info.id, { kind: "restart" });
+      }
+      if (info.status === "in_progress") store.setStatus(info.id, "agent_ready", "runner");
+      store.setRunState(info.id, "queued");
     }
     this.schedule();
   }
@@ -107,12 +111,16 @@ export class Runner implements RunnerPort {
 
   onStatusChange(ticketId: number, from: Status, to: Status) {
     const run = this.runs.get(ticketId);
-    if (to === "agent_ready") {
-      if (!run) this.o.store.setRunState(ticketId, "queued");
-    } else if (from === "agent_ready") {
+    const wasActive = from === "agent_ready" || from === "in_progress";
+    // Leaving Agent Ready / In Progress (other than the agent finishing) kills or dequeues the run.
+    if (wasActive && to !== "in_progress") {
       if (run && !run.finishing) this.kill(run);
-      if (!run) this.o.store.setRunState(ticketId, "idle");
       this.pending.delete(ticketId);
+    }
+    if (to === "agent_ready") {
+      if (!this.runs.has(ticketId)) this.o.store.setRunState(ticketId, "queued");
+    } else if (wasActive && to !== "in_progress" && !this.runs.has(ticketId)) {
+      this.o.store.setRunState(ticketId, "idle");
     }
     if (to === "review" || to === "blocked") {
       const t = this.o.store.getTicket(ticketId);
@@ -217,6 +225,7 @@ export class Runner implements RunnerPort {
     this.runs.set(ticketId, run);
     this.tokens.set(token, ticketId);
     store.setRunState(ticketId, "running");
+    store.setStatus(ticketId, "in_progress", "runner");
 
     let ticket = store.getTicket(ticketId);
     let ws: Workspace;
@@ -331,6 +340,8 @@ export class Runner implements RunnerPort {
     if (run.stopped) return this.schedule();
 
     if (run.limitResetAt) {
+      // Nothing is working on it while paused, so it goes back to Agent Ready.
+      store.setStatus(id, "agent_ready", "runner");
       store.setRunState(id, "waiting_limit");
       store.appendLog(id, "info", `Waiting for the usage limit to reset (${run.limitResetAt.toLocaleString()})`);
       this.pending.set(id, { kind: "limit" });
@@ -339,7 +350,7 @@ export class Runner implements RunnerPort {
     }
 
     const status = store.runInfo(id).status;
-    if (status !== "agent_ready") {
+    if (status !== "in_progress") {
       // Agent finished (or the user moved the ticket).
       store.setFailures(id, 0);
       store.setRunState(id, "idle");
@@ -352,6 +363,7 @@ export class Runner implements RunnerPort {
       store.setSession(id, null);
       store.appendLog(id, "info", "The earlier session couldn't be resumed. Starting a fresh run.");
       this.pending.set(id, { kind: "restart" });
+      store.setStatus(id, "agent_ready", "runner");
       store.setRunState(id, "queued");
       return this.schedule();
     }
@@ -376,6 +388,7 @@ export class Runner implements RunnerPort {
     } else {
       store.addComment(ticketId, "system", `The run failed and will retry once.\n\nError: ${reason}`);
       if (store.runInfo(ticketId).sessionId) this.pending.set(ticketId, { kind: "restart" });
+      store.setStatus(ticketId, "agent_ready", "runner");
       store.setRunState(ticketId, "queued");
     }
     this.schedule();
@@ -413,7 +426,7 @@ export class Runner implements RunnerPort {
   private armIdle(run: Run) {
     this.clearIdle(run);
     run.idleTimer = setTimeout(() => {
-      if (this.o.store.runInfo(run.ticketId).status !== "agent_ready") return;
+      if (this.o.store.runInfo(run.ticketId).status !== "in_progress") return;
       if (!run.nudged) {
         run.nudged = true;
         this.o.store.appendLog(run.ticketId, "info", "No activity for a while; asking the agent to wrap up");

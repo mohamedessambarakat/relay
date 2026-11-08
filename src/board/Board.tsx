@@ -2,6 +2,7 @@ import { useState } from "react";
 import { STATUSES, STATUS_LABELS, type Status, type TicketSummary } from "../shared/types.ts";
 import { Chip } from "./components/Chip.tsx";
 import { Icon } from "./components/Icon.tsx";
+import { MoveMenu } from "./components/MoveMenu.tsx";
 import { PriorityBars } from "./components/PriorityBars.tsx";
 import { RunBadge } from "./components/RunBadge.tsx";
 import { StatusIcon } from "./components/StatusIcon.tsx";
@@ -12,22 +13,24 @@ interface BoardProps {
   selectedId: number | null;
   runningLabel: string;
   onSelect: (id: number) => void;
-  onMove: (id: number, status: Status) => void;
+  onMove: (ticket: TicketSummary, status: Status) => void;
+  onDelete: (ticket: TicketSummary) => void;
 }
 
 const repoName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
-export function Board({ tickets, selectedId, runningLabel, onSelect, onMove }: BoardProps) {
+export function Board({ tickets, selectedId, runningLabel, onSelect, onMove, onDelete }: BoardProps) {
   const now = useNow(30_000);
   const [dragOver, setDragOver] = useState<Status | null>(null);
 
   return (
-    <div className="relative flex min-h-0 flex-1 items-start gap-2.5 overflow-x-auto overflow-y-auto px-4 py-3.5">
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3.5 md:flex-row md:overflow-x-auto md:overflow-y-hidden">
       {STATUSES.map((status) => {
         const items = tickets.filter((t) => t.status === status);
         return (
-          <section
+          <div
             key={status}
+            role="group"
             aria-labelledby={`col-${status}`}
             onDragOver={(e) => {
               e.preventDefault();
@@ -41,20 +44,24 @@ export function Board({ tickets, selectedId, runningLabel, onSelect, onMove }: B
               e.preventDefault();
               setDragOver(null);
               const id = Number(e.dataTransfer.getData("text/plain"));
-              if (id) onMove(id, status);
+              const ticket = tickets.find((t) => t.id === id);
+              // In Progress is set by the runner when an agent starts; dropping there does nothing.
+              if (ticket && status !== "in_progress") onMove(ticket, status);
             }}
-            className={`flex w-60 shrink-0 flex-col gap-2 rounded-md border bg-panel p-2 ${dragOver === status ? "border-accent" : "border-line"}`}
+            className={`flex w-full shrink-0 flex-col gap-2 rounded-md border p-2 transition-colors md:min-h-0 md:w-auto md:min-w-[176px] md:flex-1 md:shrink md:self-stretch ${
+              dragOver === status && status !== "in_progress" ? "border-accent bg-card/60" : "border-line bg-panel"
+            }`}
           >
-            <h2 id={`col-${status}`} className="flex items-center gap-2 px-1 pt-1 pb-1.5 text-[11px] font-semibold tracking-widest whitespace-nowrap uppercase">
-              <StatusIcon status={status} className="size-3.5" />
-              {STATUS_LABELS[status]}
-              <span className="font-normal text-muted">{items.length}</span>
-              {status === "agent_ready" && <span className="ml-auto font-normal tracking-normal text-running normal-case">{runningLabel}</span>}
+            <h2 id={`col-${status}`} className="flex min-w-0 items-center gap-2 px-1 pt-1 pb-1.5 text-[11px] font-semibold tracking-widest whitespace-nowrap uppercase">
+              <StatusIcon status={status} className="size-3.5 shrink-0" />
+              <span className="shrink-0">{STATUS_LABELS[status]}</span>
+              <span className="shrink-0 font-normal text-muted">{items.length}</span>
+              {status === "in_progress" && <span className="ml-auto min-w-0 truncate font-normal tracking-normal text-running normal-case">{runningLabel}</span>}
             </h2>
             {items.length === 0 ? (
               <p className="rounded-ctl border border-dashed border-line px-2 py-4 text-center text-xs text-muted">No tickets</p>
             ) : (
-              <ul className="flex flex-col gap-2">
+              <ul className="flex min-h-0 flex-col gap-2 md:flex-1 md:overflow-y-auto">
                 {items.map((t) => (
                   <li
                     key={t.id}
@@ -63,13 +70,24 @@ export function Board({ tickets, selectedId, runningLabel, onSelect, onMove }: B
                       e.dataTransfer.setData("text/plain", String(t.id));
                       e.dataTransfer.effectAllowed = "move";
                     }}
+                    className="group relative animate-rise-in"
                   >
                     <Card ticket={t} selected={t.id === selectedId} now={now} onSelect={() => onSelect(t.id)} />
+                    <div className="absolute top-1.5 right-1.5 z-10 opacity-100 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+                      <MoveMenu
+                        status={t.status}
+                        label={`Actions for ${t.key}`}
+                        compact
+                        trigger="dots"
+                        onMove={(to) => onMove(t, to)}
+                        actions={[{ label: "Delete", icon: "trash", danger: true, onSelect: () => onDelete(t) }]}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
+          </div>
         );
       })}
     </div>
@@ -78,23 +96,36 @@ export function Board({ tickets, selectedId, runningLabel, onSelect, onMove }: B
 
 function Card({ ticket: t, selected, now, onSelect }: { ticket: TicketSummary; selected: boolean; now: number; onSelect: () => void }) {
   const overdue = t.dueDate !== null && t.status !== "done" && t.dueDate < new Date().toLocaleDateString("sv-SE");
+  const running = t.runState === "running";
+  const tone = t.status === "blocked" ? "border-blocked/50 bg-blocked/5 hover:bg-blocked/10" : "border-line bg-card hover:bg-card-hover";
   return (
     <button
       type="button"
+      data-ticket-id={t.id}
       onClick={onSelect}
-      aria-pressed={selected}
-      className={`flex w-full flex-col gap-2 rounded-md border bg-card p-2.5 text-left hover:bg-card-hover ${
-        selected ? "border-accent shadow-[inset_3px_0_0_var(--color-accent)]" : "border-line"
+      aria-current={selected ? "true" : undefined}
+      className={`flex w-full flex-col gap-2 rounded-md border p-2.5 text-left transition-colors ${tone} ${running ? "border-l-2 border-l-running" : ""} ${
+        selected ? "ring-1 ring-text/40" : ""
       }`}
     >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted">{t.key}</span>
+      <span className="flex items-center gap-2 pr-8">
+        <span className="shrink-0 text-xs whitespace-nowrap text-muted">{t.key}</span>
         <PriorityBars priority={t.priority} />
+        {t.attachmentCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-xs text-muted">
+            <Icon name="clip" className="size-3" />
+            {t.attachmentCount}
+            <span className="sr-only"> attachments</span>
+          </span>
+        )}
       </span>
-      <span className="font-ui text-sm leading-snug font-semibold break-words">{t.title}</span>
-      <RunBadge ticket={t} now={now} />
-      {t.runState === "running" && (
-        <span className="h-[3px] overflow-hidden rounded-sm bg-line" role="progressbar" aria-label="Run in progress">
+      <span className="line-clamp-3 font-ui text-sm leading-snug font-semibold break-words">{t.title}</span>
+      <span className="sr-only">Status: {STATUS_LABELS[t.status]}</span>
+      <span className="flex items-center gap-1.5 empty:hidden">
+        <RunBadge ticket={t} now={now} />
+      </span>
+      {running && (
+        <span className="h-[3px] overflow-hidden rounded-sm bg-line" aria-hidden="true">
           <span className="indeterminate block h-full bg-running" />
         </span>
       )}
@@ -105,7 +136,7 @@ function Card({ ticket: t, selected, now, onSelect }: { ticket: TicketSummary; s
           ))}
         </span>
       )}
-      {(t.linkedPath || t.dueDate || t.attachmentCount > 0) && (
+      {(t.linkedPath || t.dueDate) && (
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
           {t.linkedPath && (
             <span className="inline-flex min-w-0 items-center gap-1" title={t.linkedPath}>
@@ -118,13 +149,6 @@ function Card({ ticket: t, selected, now, onSelect }: { ticket: TicketSummary; s
               <Icon name="cal" className="size-3" />
               {t.dueDate}
               {overdue && " (overdue)"}
-            </span>
-          )}
-          {t.attachmentCount > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Icon name="clip" className="size-3" />
-              {t.attachmentCount}
-              <span className="sr-only"> attachments</span>
             </span>
           )}
         </span>

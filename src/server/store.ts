@@ -152,10 +152,14 @@ export class Store {
       throw new RuleError("The agent can only move a ticket to review or blocked.");
     }
     if (by === "runner" && status === "done") throw new RuleError("Only the user moves tickets to Done.");
+    if (by === "user" && status === "in_progress") {
+      throw new RuleError("In Progress is set when the agent starts. Move the ticket to Agent Ready instead.");
+    }
     if (row.status === status) return this.getTicket(id);
     const ts = now();
-    // ready_at orders the queue; re-entering Agent Ready puts the ticket at the back of its priority.
-    const readyAt = status === "agent_ready" ? ts : row.ready_at;
+    // ready_at orders the queue. A user re-entering Agent Ready goes to the back of its priority;
+    // the runner sending a ticket back (retry, limit wait) keeps its place.
+    const readyAt = status === "agent_ready" && by !== "runner" ? ts : row.ready_at;
     this.db.prepare("UPDATE tickets SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?").run(status, readyAt, ts, id);
     this.changed(id);
     return this.getTicket(id);

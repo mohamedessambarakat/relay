@@ -8,6 +8,25 @@ beforeEach(() => {
   store = new Store(openDb(":memory:"), new EventBus());
 });
 
+describe("openDb migration", () => {
+  it("adds in_progress to an old tickets table and keeps its rows", async () => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const fs = await import("node:fs");
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "relay-mig-")), "old.db");
+    const old = new DatabaseSync(file);
+    old.exec(`CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200), description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('backlog','todo','agent_ready','blocked','review','done')), priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 4), labels TEXT NOT NULL DEFAULT '[]', due_date TEXT, linked_path TEXT, toggles TEXT NOT NULL, model TEXT, session_id TEXT, workspace TEXT, branch TEXT, run_state TEXT NOT NULL DEFAULT 'idle' CHECK (run_state IN ('idle','queued','running','waiting_limit')), run_started_at TEXT, ready_at TEXT, failures INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    old.prepare("INSERT INTO tickets (title, status, toggles, created_at, updated_at) VALUES ('old', 'review', '{}', 'x', 'x')").run();
+    old.close();
+    const s = new Store(openDb(file), new EventBus());
+    const [t] = s.listTickets();
+    expect(t!.title).toBe("old");
+    s.setStatus(t!.id, "agent_ready", "user");
+    expect(s.setStatus(t!.id, "in_progress", "runner").status).toBe("in_progress");
+  });
+});
+
 describe("Store", () => {
   it("creates tickets with default toggles (Spend off)", () => {
     const t = store.createTicket({ title: "Write README" });

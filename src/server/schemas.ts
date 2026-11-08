@@ -21,7 +21,8 @@ const ticketFields = {
 };
 
 export const createTicketSchema = z
-  .object({ ...ticketFields, status: z.enum(STATUSES) })
+  // In Progress is set by the runner when a run starts, never on create.
+  .object({ ...ticketFields, status: z.enum(STATUSES).exclude(["in_progress"]) })
   .partial()
   .required({ title: true })
   .strict();

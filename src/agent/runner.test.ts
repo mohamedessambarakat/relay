@@ -107,6 +107,8 @@ describe("Runner", () => {
     const ids = await readyTickets(4);
     expect(procs).toHaveLength(3);
     expect(ids.map((id) => store.runInfo(id).runState)).toEqual(["running", "running", "running", "queued"]);
+    // Running tickets move to In Progress; the waiting one stays in Agent Ready.
+    expect(ids.map((id) => store.runInfo(id).status)).toEqual(["in_progress", "in_progress", "in_progress", "agent_ready"]);
     expect(store.listTickets().find((t) => t.id === ids[3])!.queuePosition).toBe(1);
     expect(procs[0]!.args).toEqual(expect.arrayContaining(["-p", "--input-format", "stream-json", "--dangerously-skip-permissions", "--model", "opus"]));
     expect(procs[0]!.written[0]).toContain("Ticket 1");
@@ -162,7 +164,7 @@ describe("Runner", () => {
 
     await board("POST", `/api/tickets/${id}/comments`, { body: "@agent make the button bigger" });
     await flush();
-    expect(store.runInfo(id!).status).toBe("agent_ready");
+    expect(store.runInfo(id!).status).toBe("in_progress");
     const resumed = procs[1]!;
     expect(resumed.args).toEqual(expect.arrayContaining(["--resume", "sess-9"]));
     expect(resumed.written[0]).toContain("make the button bigger");
@@ -182,7 +184,7 @@ describe("Runner", () => {
     procs[0]!.emit("exit", 1);
     await flush();
     expect(procs).toHaveLength(2);
-    expect(store.runInfo(id!).status).toBe("agent_ready");
+    expect(store.runInfo(id!).status).toBe("in_progress");
     procs[1]!.emit("exit", 1);
     await flush();
     expect(store.runInfo(id!).status).toBe("blocked");
@@ -198,10 +200,24 @@ describe("Runner", () => {
     await flush();
     expect(p.killed).toBe(true);
     await flush();
-    expect(store.runInfo(ids[0]!).runState).toBe("waiting_limit");
+    expect(store.runInfo(ids[0]!)).toMatchObject({ status: "agent_ready", runState: "waiting_limit" });
     expect(runner.systemState().limitResetAt).toBe(new Date(resetsAt * 1000).toISOString());
     expect(procs).toHaveLength(3); // the queued 4th didn't start
     expect(store.runInfo(ids[3]!).runState).toBe("queued");
+  });
+
+  it("doesn't let the user move a ticket to In Progress", async () => {
+    const res = await board("POST", "/api/tickets", { title: "x" });
+    const { id } = (await res.json()) as { id: number };
+    expect((await board("POST", `/api/tickets/${id}/status`, { status: "in_progress" })).status).toBe(409);
+  });
+
+  it("kills the run when the user moves an In Progress ticket away", async () => {
+    const [id] = await readyTickets(1);
+    expect((await board("POST", `/api/tickets/${id}/status`, { status: "todo" })).status).toBe(200);
+    await flush();
+    expect(procs[0]!.killed).toBe(true);
+    expect(store.runInfo(id!)).toMatchObject({ status: "todo", runState: "idle" });
   });
 
   it("rejects board writes from another origin", async () => {

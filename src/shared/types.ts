@@ -1,10 +1,11 @@
-export const STATUSES = ["backlog", "todo", "agent_ready", "blocked", "review", "done"] as const;
+export const STATUSES = ["backlog", "todo", "agent_ready", "in_progress", "blocked", "review", "done"] as const;
 export type Status = (typeof STATUSES)[number];
 
 export const STATUS_LABELS: Record<Status, string> = {
   backlog: "Backlog",
   todo: "Todo",
   agent_ready: "Agent Ready",
+  in_progress: "In Progress",
   blocked: "Blocked",
   review: "Review",
   done: "Done",

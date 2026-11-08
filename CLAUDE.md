@@ -26,7 +26,8 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 - `scripts/`: auto-start at Windows login setup
 
 ## Project rules
-- **Statuses are fixed:** Backlog → Todo → Agent Ready → Blocked → Review → Done. Only the user moves tickets to Done.
+- **Statuses are fixed:** Backlog → Todo → Agent Ready → In Progress → Blocked → Review → Done. Only the user moves tickets to Done.
+- **Agent Ready vs In Progress:** Agent Ready means waiting for a slot. The runner moves a ticket to In Progress when its run starts (users can't), and back to Agent Ready for a retry or a usage-limit wait. Moving a ticket out of In Progress kills the run.
 - **Ticket fields:** title, description (markdown), status, priority, labels, due date, optional linked folder/repo, comments, attachments, and authorization toggles: Send, Push, Publish, Merge, Deploy (on by default) and Spend (off by default).
 - **Spend limits:** when Spend is on, the agent reads the task first and lists the paid services it will need (service, unit, what for), e.g. Anthropic API in USD, ElevenLabs in credits. It pre-fills each max with its own estimate of what the task needs, so the run isn't blocked waiting for one. Service and unit are read-only to the user; the user can change any max. The agent tracks spend per service, reports it in comments, and moves to Blocked before it would pass a max. Relay can't meter third-party usage itself, so these caps rely on the agent's own tracking.
 - **Models:** a Settings page sets the model per role: the main agent (passed as `--model`) and each of the user's own agents in `~/.claude/agents` (re-declared through `--agents` with the same prompt and the chosen model). Built-in subagents (Explore, Plan, general-purpose) aren't listed: overriding them through `--agents` would replace their built-in prompts. A ticket can override only the main agent's model; "Default" uses Settings.

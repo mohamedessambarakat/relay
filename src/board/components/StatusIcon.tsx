@@ -5,6 +5,7 @@ const STATUS_ICON: Record<Status, { icon: IconName; color: string }> = {
   backlog: { icon: "dashed", color: "text-muted" },
   todo: { icon: "circle", color: "text-text" },
   agent_ready: { icon: "bolt", color: "text-accent" },
+  in_progress: { icon: "relay", color: "text-running" },
   blocked: { icon: "alert", color: "text-blocked" },
   review: { icon: "eye", color: "text-review" },
   done: { icon: "check", color: "text-done" },

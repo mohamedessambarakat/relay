@@ -1,18 +1,22 @@
 import { PRIORITY_LABELS, type Priority } from "../../shared/types.ts";
+import { Icon } from "./Icon.tsx";
 
-const HEIGHTS = ["h-1", "h-2", "h-2.5", "h-3"];
+const STYLE: Record<Exclude<Priority, 0>, string> = {
+  1: "text-muted",
+  2: "text-text",
+  3: "text-review",
+  4: "text-blocked",
+};
 
-/** Four bars; the number lit equals the priority. The label is text for screen readers (and optionally shown). */
-export function PriorityBars({ priority, showLabel = false }: { priority: Priority; showLabel?: boolean }) {
+/** A flag plus the priority word. "None" renders nothing visible, only screen-reader text. */
+export function PriorityBars({ priority }: { priority: Priority; showLabel?: boolean }) {
+  if (priority === 0) return <span className="sr-only">Priority: None</span>;
   return (
-    <span className="inline-flex items-center gap-1.5" title={`Priority: ${PRIORITY_LABELS[priority]}`}>
-      <span className="inline-flex h-3 items-end gap-px" aria-hidden="true">
-        {HEIGHTS.map((h, i) => (
-          <i key={i} className={`w-[3px] rounded-[1px] ${h} ${i < priority ? "bg-text" : "bg-line"}`} />
-        ))}
-      </span>
-      <span className={showLabel ? "text-xs text-muted" : "sr-only"}>
-        {showLabel ? PRIORITY_LABELS[priority] : `Priority: ${PRIORITY_LABELS[priority]}`}
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${STYLE[priority]}`}>
+      <Icon name="flag" className="size-3.5" />
+      <span>
+        <span className="sr-only">Priority: </span>
+        {PRIORITY_LABELS[priority]}
       </span>
     </span>
   );

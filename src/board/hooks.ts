@@ -22,10 +22,13 @@ export function useResource<T>(load: (signal: AbortSignal) => Promise<T>, key: s
 
   useEffect(() => {
     const ac = new AbortController();
+    // The aborted check covers loaders that ignore the signal; the key check covers a state reset by a newer key.
     loadRef.current(ac.signal).then(
-      (data) => setState((s) => (s.key === key ? { key, data } : s)),
+      (data) => {
+        if (!ac.signal.aborted) setState((s) => (s.key === key ? { key, data } : s));
+      },
       (e: unknown) => {
-        if (isAbort(e)) return;
+        if (ac.signal.aborted || isAbort(e)) return;
         const message = errorMessage(e);
         // A failed background refresh keeps the data on screen and tells the user instead.
         setState((s) => (s.key === key && s.data === undefined ? { ...s, error: message } : s));

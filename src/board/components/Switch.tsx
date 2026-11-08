@@ -1,7 +1,8 @@
 interface Props {
   checked: boolean;
   onChange: (next: boolean) => void;
-  label: string;
+  /** Accessible name. Omit when the switch sits inside a <label> with visible text. */
+  label?: string;
   disabled?: boolean;
 }
 
@@ -14,10 +15,14 @@ export function Switch({ checked, onChange, label, disabled }: Props) {
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-[18px] w-8 shrink-0 rounded-full disabled:opacity-50 ${checked ? "bg-accent" : "bg-line"}`}
+      className={`flex h-6 w-11 shrink-0 items-center rounded-full border px-0.5 transition-colors duration-150 disabled:opacity-50 motion-reduce:transition-none ${
+        checked ? "border-accent bg-accent" : "border-control bg-transparent"
+      }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white transition-[translate] motion-reduce:transition-none ${checked ? "translate-x-3.5" : ""}`}
+        className={`size-4.5 rounded-full transition-transform duration-150 motion-reduce:transition-none ${
+          checked ? "translate-x-5 bg-accent-text" : "bg-muted"
+        }`}
       />
     </button>
   );

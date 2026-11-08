@@ -1,11 +1,15 @@
 @import "tailwindcss";
+/* Self-hosted so the board works offline and the CSP stays 'self'. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @theme {
   --color-bg: #08090a;
   --color-panel: #0e1012;
   --color-card: #121518;
   --color-card-hover: #171b1f;
-  --color-line: #23282e;
+  --color-line: #23282e; /* decorative dividers only */
+  --color-control: #6e7681; /* borders of inputs, selects, switches: 3:1+ on panel/card */
   --color-text: #d7dde3;
   --color-muted: #8b949e;
   --color-accent: #3ddc97;
@@ -24,9 +28,37 @@
 
   --radius-ctl: 3px;
 
-  --font-chrome: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  --font-ui: "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", Consolas, monospace;
+  /* Motion: short, opacity/transform only (GPU-cheap). Use as animate-fade-in etc. */
+  --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-rise-in: rise-in 180ms ease-out both;
+  --animate-slide-in: slide-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop-in: pop-in 160ms ease-out both;
+  --animate-live-dot: live-dot 1.6s ease-in-out infinite;
+  --animate-blink: blink 1s steps(1) infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(4px); }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateX(16px); }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: scale(0.97); }
+  }
+  @keyframes live-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.8); }
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  --font-chrome: "Geist Mono Variable", "Cascadia Code", Consolas, monospace;
+  --font-ui: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Cascadia Code", Consolas, monospace;
 }
 
 @layer base {
@@ -46,6 +78,14 @@
   }
   button {
     cursor: pointer;
+  }
+  /* Thin, dark scrollbars so nested scroll areas don't shout. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--color-control) transparent;
   }
   button:disabled {
     cursor: not-allowed;
@@ -69,5 +109,12 @@
   .indeterminate {
     animation: none;
     width: 100%;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
 }

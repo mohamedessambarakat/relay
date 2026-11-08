@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
   description TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL CHECK (status IN ('backlog','todo','agent_ready','blocked','review','done')),
+  status TEXT NOT NULL CHECK (status IN ('backlog','todo','agent_ready','in_progress','blocked','review','done')),
   priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 4),
   labels TEXT NOT NULL DEFAULT '[]',
   due_date TEXT,
@@ -77,9 +77,31 @@ CREATE TABLE IF NOT EXISTS settings (
 
 export type Db = DatabaseSync;
 
+/** Rebuilds the tickets table when its status CHECK predates a new status (SQLite can't alter a CHECK). */
+function migrateStatusCheck(db: DatabaseSync) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tickets'").get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'in_progress'")) return;
+  const newSql = row.sql.replace("'agent_ready',", "'agent_ready','in_progress',").replace(/CREATE TABLE "?tickets"?/, "CREATE TABLE tickets_new");
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(newSql);
+    db.exec("INSERT INTO tickets_new SELECT * FROM tickets");
+    db.exec("DROP TABLE tickets");
+    db.exec("ALTER TABLE tickets_new RENAME TO tickets");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 export function openDb(file: string): Db {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
+  migrateStatusCheck(db);
   db.exec(SCHEMA);
   return db;
 }

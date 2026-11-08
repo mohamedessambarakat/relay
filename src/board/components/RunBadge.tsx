@@ -9,15 +9,15 @@ export function RunBadge({ ticket, now }: { ticket: RunFields; now: number }) {
   const state: RunState = ticket.runState;
   if (state === "running") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-running">
-        <Icon name="terminal" className="size-3.5" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent">
+        <span aria-hidden="true" className="size-1.5 animate-live-dot rounded-full bg-accent" />
         Running{ticket.runStartedAt ? ` · ${formatElapsed(ticket.runStartedAt, now)}` : ""}
       </span>
     );
   }
   if (state === "queued") {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-queued">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
         <Icon name="clock" className="size-3.5" />
         Queued{ticket.queuePosition ? ` #${ticket.queuePosition}` : ""}
       </span>
