@@ -3,22 +3,22 @@
 Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to **Agent Ready** makes Claude work on it end to end in the background, using the user's Claude subscription via headless `claude -p`. Not an API key.
 
 ## Stack
-- Node + TypeScript (strict), Hono server, SQLite, React + Vite + Tailwind board
+- Node + TypeScript (strict), Hono server, SQLite (built-in `node:sqlite`, no native module), React + Vite + Tailwind board
 - Tests: Vitest
 - Package manager: pnpm (lockfile decides)
 
 ## Commands
-Planned, not created yet. Update once scaffolded.
-- Dev: `pnpm dev`
-- Build: `pnpm build`
+- Dev: `pnpm dev` (server on :4317 with reload, board on :5173 proxying /api)
+- Build: `pnpm build` (board into `dist/board`); run: `pnpm start` (tsx, serves the built board)
 - Test: `pnpm test`
 - Lint/typecheck: `pnpm lint`, `pnpm typecheck`
+- Auto-start: `scripts/install-autostart.ps1` / `uninstall-autostart.ps1` (Startup-folder shortcut)
 
 ## Structure
 - `src/server/`: API, database, ticket rules
 - `src/agent/`: runs Claude, queue, live log
 - `src/mcp/`: Relay MCP server (tools Claude uses to talk to Relay)
-- `src/board/`: the web board (React). Shared components in `src/board/components/`, color tokens in the Tailwind config
+- `src/board/`: the web board (React). Shared components in `src/board/components/`, color tokens in the Tailwind v4 `@theme` block in `src/board/index.css`
 - `src/shared/`: types used by server and board
 - `data/`: SQLite DB + attachments (gitignored)
 - `workspaces/`: one folder or git worktree per ticket (gitignored)
@@ -27,6 +27,10 @@ Planned, not created yet. Update once scaffolded.
 ## Project rules
 - **Statuses are fixed:** Backlog → Todo → Agent Ready → Blocked → Review → Done. Only the user moves tickets to Done.
 - **Ticket fields:** title, description (markdown), status, priority, labels, due date, optional linked folder/repo, comments, attachments, and authorization toggles: Send, Push, Publish, Merge, Deploy (on by default) and Spend (off by default).
+- **Spend limits:** when Spend is on, the agent reads the task first and lists the paid services it will need (service, unit, what for), e.g. Anthropic API in USD, ElevenLabs in credits. It pre-fills each max with its own estimate of what the task needs, so the run isn't blocked waiting for one. Service and unit are read-only to the user; the user can change any max. The agent tracks spend per service, reports it in comments, and moves to Blocked before it would pass a max. Relay can't meter third-party usage itself, so these caps rely on the agent's own tracking.
+- **Models:** a Settings page sets the model per role: the main agent (passed as `--model`) and each of the user's own agents in `~/.claude/agents` (re-declared through `--agents` with the same prompt and the chosen model). Built-in subagents (Explore, Plan, general-purpose) aren't listed: overriding them through `--agents` would replace their built-in prompts. A ticket can override only the main agent's model; "Default" uses Settings.
+- **Board UI:** Console look (dark, monospace chrome, split screen with the live log first in the ticket panel) with Jira-style column cards.
+- **Agent API:** the Relay MCP server (`src/mcp/server.ts`) calls `/api/agent/*` with a per-run bearer token that only works for that run's ticket. `set_status` is refused until the agent has commented during the run.
 - **Queue:** up to 3 tickets run in parallel. Extra Agent Ready tickets wait, ordered by highest priority, then oldest.
 - **Run:** `claude -p` with prompts skipped (`--dangerously-skip-permissions`) and the user's normal Claude setup (global CLAUDE.md, skills, MCP servers) plus the Relay MCP.
 - **Agent behavior follows `~/.claude/skills/afk`:**
@@ -56,8 +60,11 @@ Planned, not created yet. Update once scaffolded.
 - Local only for now. No deploy.
 
 ## Gotchas
-- Unverified until the first build step checks them:
-  - Do claude.ai connectors (Gmail) work in headless `claude -p`?
-  - Does mid-run comment injection work via `--input-format stream-json`?
-  - Does `--resume` work in headless mode?
-  - How does a headless run report hitting the usage limit and its reset time?
+Checked by spike on 2026-11-08 (Claude Code 2.1.319):
+- claude.ai connectors work headless: Gmail showed as connected and `list_labels` succeeded.
+- `--resume <session-id>` works headless and keeps the earlier conversation.
+- Comment injection works: with `--input-format stream-json`, a user message written to stdin mid-run is handled in the same session, as the next turn.
+- A run emits several `result` messages (one per turn, more when background tasks finish). The process ends only when stdin closes, so the runner keeps stdin open until the agent sets Review/Blocked. Plain `-p` text input exits at the first result and drops background work.
+- Usage limit: the stream carries `rate_limit_event` messages with `rate_limit_info.status` (`allowed`, …) and `resetsAt` (unix seconds) per window. The runner treats any status other than `allowed`/`allowed_warning`, or a result with `api_error_status` 429, as hitting the limit. The rejected case itself wasn't triggered, so this part is inferred.
+- `--agents '{"researcher":{…,"model":"sonnet"}}'` overrides the user's `researcher` agent: the run's `modelUsage` showed Sonnet while the main model was Haiku.
+- Spawn `claude` directly (`C:Users<user>.localinclaude.exe`), not through a shell.
