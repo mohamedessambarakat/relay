@@ -68,4 +68,6 @@ Checked by spike on 2026-11-08 (Claude Code 2.1.319):
 - A run emits several `result` messages (one per turn, more when background tasks finish). The process ends only when stdin closes, so the runner keeps stdin open until the agent sets Review/Blocked. Plain `-p` text input exits at the first result and drops background work.
 - Usage limit: the stream carries `rate_limit_event` messages with `rate_limit_info.status` (`allowed`, …) and `resetsAt` (unix seconds) per window. The runner treats any status other than `allowed`/`allowed_warning`, or a result with `api_error_status` 429, as hitting the limit. The rejected case itself wasn't triggered, so this part is inferred.
 - `--agents '{"researcher":{…,"model":"sonnet"}}'` overrides the user's `researcher` agent: the run's `modelUsage` showed Sonnet while the main model was Haiku.
-- Spawn `claude` directly (`C:Users<user>.localinclaude.exe`), not through a shell.
+- Spawn `claude` directly (`C:\Users\<user>\.local\bin\claude.exe`, found by `claudeBin()`), not through a shell.
+- In PowerShell scripts, check Relay via `127.0.0.1`: Windows PowerShell tries IPv6 for `localhost` first and stalls, since Relay listens on IPv4 only.
+- Start scripts call `node` directly: at login the Windows PATH may not include pnpm.
