@@ -16,8 +16,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   due_date TEXT,
   linked_path TEXT,
   toggles TEXT NOT NULL,
+  provider TEXT,
   model TEXT,
   session_id TEXT,
+  session_provider TEXT,
   workspace TEXT,
   branch TEXT,
   run_state TEXT NOT NULL DEFAULT 'idle' CHECK (run_state IN ('idle','queued','running','waiting_limit')),
@@ -98,11 +100,20 @@ function migrateStatusCheck(db: DatabaseSync) {
   }
 }
 
+/** Adds columns introduced after a database was created. */
+function migrateColumns(db: DatabaseSync) {
+  const cols = new Set((db.prepare("PRAGMA table_info(tickets)").all() as { name: string }[]).map((c) => c.name));
+  // Sessions from before multi-provider support were all Claude sessions.
+  if (!cols.has("session_provider")) db.exec("ALTER TABLE tickets ADD COLUMN session_provider TEXT; UPDATE tickets SET session_provider = 'claude' WHERE session_id IS NOT NULL");
+  if (!cols.has("provider")) db.exec("ALTER TABLE tickets ADD COLUMN provider TEXT");
+}
+
 export function openDb(file: string): Db {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   migrateStatusCheck(db);
   db.exec(SCHEMA);
+  migrateColumns(db);
   return db;
 }
 

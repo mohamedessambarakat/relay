@@ -1,12 +1,17 @@
 # Relay
 
-A small local task board. Move a ticket to **Agent Ready** and Claude works on it end to end in the background, using your Claude subscription through headless `claude -p`. When it's done, the ticket lands in **Review** (or **Blocked** if it needs you), with a final comment, any result files attached, and a push to your phone.
+A small local task board. Move a ticket to **Agent Ready** and a coding agent works on it end to end in the background: Claude Code (headless `claude -p`) or Codex (`codex exec`), using your own subscription. When it's done, the ticket lands in **Review** (or **Blocked** if it needs you), with a final comment, any result files attached, and a push to your phone.
 
-Relay listens on `localhost` only. Anything that can reach it can run Claude with full permissions, so don't expose the port.
+Relay listens on `localhost` only. It runs the agent with every permission prompt skipped, so anything that can reach the port can run code on your machine. Don't expose it.
 
 ## Setup
 
-Needs Node 24+, pnpm, and the Claude Code CLI signed in to your subscription.
+Needs Node 24+, pnpm, and at least one agent CLI signed in:
+
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`), or
+- [Codex](https://github.com/openai/codex) (`npm i -g @openai/codex`, then `codex login`).
+
+Pick the default agent in **Settings**; each ticket can override it. Relay is tested on Windows; the start/stop scripts and keep-awake are Windows-only.
 
 ```sh
 pnpm install
@@ -55,8 +60,8 @@ To bring the background copy back without logging out, double-click `Relay.lnk` 
 
 - Up to 3 tickets run at once. Others wait in Agent Ready, highest priority first, then oldest.
 - Each ticket works in `workspaces/R-<n>`. If you link a git repo, that's a worktree on branch `relay/R-<n>`; main is never touched.
-- The toggles on the ticket (Send, Push, Publish, Merge, Deploy, Spend) decide which outward actions Claude may take. Spend is off by default. When it's on, Claude lists the paid services it needs with an estimate, which becomes the max; you can change any max.
-- Comments are notes, unless they mention `@agent`: then they go into the running session, or send a Review/Blocked ticket back to work.
+- The toggles on the ticket (Send, Push, Publish, Merge, Deploy, Spend) decide which outward actions the agent may take. Spend is off by default. When it's on, the agent lists the paid services it needs with an estimate, which becomes the max; you can change any max.
+- Comments are notes, unless they mention `@agent`: then they go into the running session, or send a Review/Blocked ticket back to work. Codex runs one turn at a time, so on a running Codex ticket the comment is sent when the current turn ends.
 - Stop kills the run and moves the ticket to Blocked. A run that fails twice also goes to Blocked.
 - If your usage limit is hit, the ticket waits for the reset and continues; nothing new starts until then.
 
@@ -65,8 +70,8 @@ To bring the background copy back without logging out, double-click `Relay.lnk` 
 | Folder | What's in it |
 |---|---|
 | `src/server/` | The web server: API, database, ticket rules, security checks |
-| `src/agent/` | Runs Claude: the queue, workspaces, prompts, live log, notifications, keep-awake |
-| `src/mcp/` | The Relay tools Claude uses during a run (comment, attach, set status, spend) |
+| `src/agent/` | Runs the agent CLIs (Claude, Codex): the queue, workspaces, prompts, live log, notifications, keep-awake |
+| `src/mcp/` | The Relay tools the agent uses during a run (comment, attach, set status, spend) |
 | `src/board/` | The board you see in the browser (React) |
 | `src/shared/` | Types shared by the server and the board |
 | `scripts/` | Start Relay at Windows login |

@@ -8,6 +8,7 @@ import {
   type Comment,
   type LogLine,
   type Priority,
+  type ProviderId,
   type RunState,
   type SpendItem,
   type Status,
@@ -26,8 +27,10 @@ interface TicketRow {
   due_date: string | null;
   linked_path: string | null;
   toggles: string;
+  provider: ProviderId | null;
   model: string | null;
   session_id: string | null;
+  session_provider: ProviderId | null;
   workspace: string | null;
   branch: string | null;
   run_state: RunState;
@@ -48,6 +51,7 @@ export interface NewTicket {
   dueDate?: string | null;
   linkedPath?: string | null;
   toggles?: Partial<Toggles>;
+  provider?: ProviderId | null;
   model?: string | null;
 }
 
@@ -66,6 +70,7 @@ export interface RunInfo {
   status: Status;
   runState: RunState;
   sessionId: string | null;
+  sessionProvider: ProviderId | null;
   workspace: string | null;
   failures: number;
   priority: number;
@@ -91,8 +96,8 @@ export class Store {
     const status = input.status ?? "backlog";
     const res = this.db
       .prepare(
-        `INSERT INTO tickets (title, description, status, priority, labels, due_date, linked_path, toggles, model, ready_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tickets (title, description, status, priority, labels, due_date, linked_path, toggles, provider, model, ready_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.title,
@@ -103,6 +108,7 @@ export class Store {
         input.dueDate ?? null,
         input.linkedPath ?? null,
         JSON.stringify({ ...DEFAULT_TOGGLES, ...input.toggles }),
+        input.provider ?? null,
         input.model ?? null,
         status === "agent_ready" ? ts : null,
         ts,
@@ -116,9 +122,12 @@ export class Store {
   updateTicket(id: number, patch: TicketPatch): TicketDetail {
     const row = this.row(id);
     const toggles = patch.toggles ? { ...this.toggles(row), ...patch.toggles } : this.toggles(row);
+    const provider = patch.provider !== undefined ? patch.provider : row.provider;
+    // A model name belongs to one provider, so switching provider resets the model to its default.
+    const model = provider !== row.provider && patch.model === undefined ? null : patch.model !== undefined ? patch.model : row.model;
     this.db
       .prepare(
-        `UPDATE tickets SET title = ?, description = ?, priority = ?, labels = ?, due_date = ?, linked_path = ?, toggles = ?, model = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE tickets SET title = ?, description = ?, priority = ?, labels = ?, due_date = ?, linked_path = ?, toggles = ?, provider = ?, model = ?, updated_at = ? WHERE id = ?`,
       )
       .run(
         patch.title ?? row.title,
@@ -128,7 +137,8 @@ export class Store {
         patch.dueDate !== undefined ? patch.dueDate : row.due_date,
         patch.linkedPath !== undefined ? patch.linkedPath : row.linked_path,
         JSON.stringify(toggles),
-        patch.model !== undefined ? patch.model : row.model,
+        provider,
+        model,
         now(),
         id,
       );
@@ -193,6 +203,7 @@ export class Store {
       ...this.summary(row, queue),
       description: row.description,
       toggles: this.toggles(row),
+      provider: row.provider,
       model: row.model,
       branch: row.branch,
       workspace: row.workspace,
@@ -212,6 +223,7 @@ export class Store {
       status: r.status,
       runState: r.run_state,
       sessionId: r.session_id,
+      sessionProvider: r.session_provider,
       workspace: r.workspace,
       failures: r.failures,
       priority: r.priority,
@@ -239,8 +251,8 @@ export class Store {
     this.changed(id);
   }
 
-  setSession(id: number, sessionId: string | null) {
-    this.db.prepare("UPDATE tickets SET session_id = ? WHERE id = ?").run(sessionId, id);
+  setSession(id: number, sessionId: string | null, provider: ProviderId | null = null) {
+    this.db.prepare("UPDATE tickets SET session_id = ?, session_provider = ? WHERE id = ?").run(sessionId, sessionId ? provider : null, id);
   }
 
   setWorkspace(id: number, workspace: string, branch: string | null) {

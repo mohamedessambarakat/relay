@@ -20,18 +20,25 @@ class FakeProc extends EventEmitter {
   killed = false;
   token: string;
   constructor(
+    public command: string,
     public args: string[],
     public cwd: string,
   ) {
     super();
     this.stdin.on("data", (d: Buffer) => this.written.push(d.toString()));
-    // The runner deletes the MCP config when the run ends, so read the token at launch.
-    const file = args[args.indexOf("--mcp-config") + 1]!;
-    this.token = JSON.parse(fs.readFileSync(file, "utf8")).mcpServers.relay.env.RELAY_TOKEN;
+    if (args.includes("--mcp-config")) {
+      // The runner deletes the MCP config when the run ends, so read the token at launch.
+      const file = args[args.indexOf("--mcp-config") + 1]!;
+      this.token = JSON.parse(fs.readFileSync(file, "utf8")).mcpServers.relay.env.RELAY_TOKEN;
+    } else {
+      // Codex gets the MCP server as a -c TOML override.
+      const env = args.find((a) => a.startsWith("mcp_servers.relay.env="))!;
+      this.token = /RELAY_TOKEN="([^"]+)"/.exec(env)![1]!;
+    }
   }
   kill() {
     this.killed = true;
-    setImmediate(() => this.emit("exit", null));
+    setImmediate(() => this.emit("close", null));
   }
   line(obj: unknown) {
     this.stdout.write(JSON.stringify(obj) + "\n");
@@ -75,8 +82,8 @@ beforeEach(() => {
     workspacesDir: path.join(tmp, "ws"),
     runFilesDir: path.join(tmp, "runs"),
     prepare: async (root, key) => ({ dir: path.join(root, key), branch: null, kind: "folder" }),
-    launch: (args, cwd) => {
-      const p = new FakeProc(args, cwd);
+    launch: (command, args, cwd) => {
+      const p = new FakeProc(command, args, cwd);
       procs.push(p);
       return p as unknown as RunProcess;
     },
@@ -134,7 +141,7 @@ describe("Runner", () => {
     expect((await agent(p.token, "POST", "/api/agent/status", { status: "review" })).status).toBe(200);
     expect(p.stdin.writableEnded).toBe(true);
 
-    p.emit("exit", 0);
+    p.emit("close", 0);
     await flush();
     expect(store.runInfo(ids[0]!)).toMatchObject({ status: "review", runState: "idle", sessionId: "sess-1" });
     expect(pushes).toEqual([{ key: `R-${ids[0]}`, status: "review" }]);
@@ -159,7 +166,7 @@ describe("Runner", () => {
     p.line({ type: "system", subtype: "init", session_id: "sess-9" });
     await agent(p.token, "POST", "/api/agent/comments", { body: "done" });
     await agent(p.token, "POST", "/api/agent/status", { status: "review" });
-    p.emit("exit", 0);
+    p.emit("close", 0);
     await flush();
 
     await board("POST", `/api/tickets/${id}/comments`, { body: "@agent make the button bigger" });
@@ -181,11 +188,11 @@ describe("Runner", () => {
 
   it("retries a crashed run once, then blocks it", async () => {
     const [id] = await readyTickets(1);
-    procs[0]!.emit("exit", 1);
+    procs[0]!.emit("close", 1);
     await flush();
     expect(procs).toHaveLength(2);
     expect(store.runInfo(id!).status).toBe("in_progress");
-    procs[1]!.emit("exit", 1);
+    procs[1]!.emit("close", 1);
     await flush();
     expect(store.runInfo(id!).status).toBe("blocked");
     expect(pushes.at(-1)).toEqual({ key: `R-${id}`, status: "blocked" });
@@ -230,5 +237,135 @@ describe("Runner", () => {
     const res = await board("POST", "/api/tickets", { title: "", priority: 9 });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_body");
+  });
+  it("sends the ticket back to work when an @agent comment lands after the agent set Review but before it exited", async () => {
+    const [id] = await readyTickets(1);
+    const p = procs[0]!;
+    p.line({ type: "system", subtype: "init", session_id: "sess-late" });
+    await agent(p.token, "POST", "/api/agent/comments", { body: "done" });
+    await agent(p.token, "POST", "/api/agent/status", { status: "review" });
+    await board("POST", `/api/tickets/${id}/comments`, { body: "@agent one more thing" });
+    p.emit("close", 0);
+    await flush();
+    expect(store.runInfo(id!).status).toBe("in_progress");
+    expect(procs[1]!.args).toEqual(expect.arrayContaining(["--resume", "sess-late"]));
+    expect(procs[1]!.written.join("")).toContain("one more thing");
+  });
+
+  describe("with Codex", () => {
+    async function codexTicket(extra: Record<string, unknown> = {}) {
+      const res = await board("POST", "/api/tickets", { title: "Codex job", status: "agent_ready", provider: "codex", ...extra });
+      expect(res.status).toBe(201);
+      await flush();
+      return ((await res.json()) as { id: number }).id;
+    }
+
+    it("runs codex exec with the message on stdin, Relay's MCP server and the ticket's model", async () => {
+      await codexTicket({ model: "gpt-5.6-luna" });
+      const p = procs[0]!;
+      expect(p.args).toEqual(expect.arrayContaining(["exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5.6-luna", "-"]));
+      expect(p.args.some((a) => a.startsWith("developer_instructions="))).toBe(true);
+      expect(p.args).not.toContain("resume");
+      expect(p.written.join("")).toContain("Codex job");
+      expect(p.stdin.writableEnded).toBe(true);
+    });
+
+    it("uses the Settings default provider and Codex model when the ticket has none", async () => {
+      expect((await board("PUT", "/api/settings/provider", { provider: "codex", codexModel: "gpt-5.6-terra" })).status).toBe(200);
+      await readyTickets(1);
+      expect(procs[0]!.args).toEqual(expect.arrayContaining(["exec", "-m", "gpt-5.6-terra"]));
+    });
+
+    it("holds an @agent comment during a turn and resumes the session with it after", async () => {
+      const id = await codexTicket();
+      const p = procs[0]!;
+      p.line({ type: "thread.started", thread_id: "th-1" });
+      p.line({ type: "turn.started" });
+      await flush();
+      await board("POST", `/api/tickets/${id}/comments`, { body: "@agent use blue" });
+      await flush();
+      expect(procs).toHaveLength(1);
+
+      p.line({ type: "turn.completed", usage: {} });
+      p.emit("close", 0);
+      await flush();
+      const next = procs[1]!;
+      expect(next.args).toEqual(expect.arrayContaining(["exec", "resume", "th-1"]));
+      expect(next.written.join("")).toContain("use blue");
+      expect(next.token).toBe(p.token); // same run, same token
+      expect(store.runInfo(id).status).toBe("in_progress");
+    });
+
+    it("nudges once when a turn ends without a status, then fails the run", async () => {
+      const id = await codexTicket();
+      procs[0]!.line({ type: "thread.started", thread_id: "th-2" });
+      await flush();
+      procs[0]!.emit("close", 0);
+      await flush();
+      expect(procs[1]!.args).toEqual(expect.arrayContaining(["resume", "th-2"]));
+      procs[1]!.emit("close", 0);
+      await flush();
+      // The failure retries once with a fresh launch that resumes the session.
+      expect(store.getTicket(id).comments.at(-1)?.body).toContain("will retry once");
+    });
+
+    it("ends normally once the agent sets Review", async () => {
+      const id = await codexTicket();
+      const p = procs[0]!;
+      p.line({ type: "thread.started", thread_id: "th-3" });
+      await flush();
+      await agent(p.token, "POST", "/api/agent/comments", { body: "Done." });
+      await agent(p.token, "POST", "/api/agent/status", { status: "review" });
+      p.emit("close", 0);
+      await flush();
+      expect(procs).toHaveLength(1);
+      expect(store.runInfo(id)).toMatchObject({ status: "review", runState: "idle", sessionId: "th-3", sessionProvider: "codex" });
+    });
+
+    it("doesn't resume a Claude session with Codex", async () => {
+      const [id] = await readyTickets(1);
+      const p = procs[0]!;
+      p.line({ type: "system", subtype: "init", session_id: "claude-sess" });
+      await agent(p.token, "POST", "/api/agent/comments", { body: "done" });
+      await agent(p.token, "POST", "/api/agent/status", { status: "review" });
+      p.emit("close", 0);
+      await flush();
+      await board("PATCH", `/api/tickets/${id}`, { provider: "codex" });
+      await board("POST", `/api/tickets/${id}/comments`, { body: "@agent one more thing" });
+      await flush();
+      expect(procs[1]!.args).not.toContain("resume");
+      expect(procs[1]!.args).not.toContain("claude-sess");
+    });
+    it("sends the ticket back to work when a comment arrived during the agent's last turn", async () => {
+      const id = await codexTicket();
+      const p = procs[0]!;
+      p.line({ type: "thread.started", thread_id: "th-4" });
+      await flush();
+      await board("POST", `/api/tickets/${id}/comments`, { body: "@agent also do the footer" });
+      await agent(p.token, "POST", "/api/agent/comments", { body: "Done." });
+      await agent(p.token, "POST", "/api/agent/status", { status: "review" });
+      p.emit("close", 0);
+      await flush();
+      expect(store.runInfo(id).status).toBe("in_progress");
+      expect(procs[1]!.args).toEqual(expect.arrayContaining(["resume", "th-4"]));
+      expect(procs[1]!.written.join("")).toContain("also do the footer");
+    });
+
+    it("waits for the reset when a Codex turn fails on the usage limit", async () => {
+      const id = await codexTicket();
+      const p = procs[0]!;
+      p.line({ type: "thread.started", thread_id: "th-5" });
+      p.line({ type: "turn.failed", error: { message: "You've hit your usage limit." } });
+      await flush();
+      p.emit("close", 1);
+      await flush();
+      expect(store.runInfo(id)).toMatchObject({ status: "agent_ready", runState: "waiting_limit" });
+    });
+
+    it("ignores a Claude model on the ticket when the run uses Codex", async () => {
+      await codexTicket({ model: "opus" });
+      expect(procs[0]!.args).not.toContain("opus");
+      expect(procs[0]!.args).not.toContain("-m");
+    });
   });
 });

@@ -3,10 +3,14 @@ import {
   MODEL_CHOICES,
   PRIORITIES,
   PRIORITY_LABELS,
+  PROVIDER_LABELS,
+  PROVIDERS,
   STATUS_LABELS,
   TOGGLE_KEYS,
   type Comment,
   type Priority,
+  type ProviderId,
+  type ProviderSettings,
   type SpendItem,
   type Status,
   type TicketDetail,
@@ -354,6 +358,8 @@ function TitleEditor({
 
 const Properties = memo(function Properties({ ticket, patch }: { ticket: TicketDetail; patch: (b: Record<string, unknown>) => Promise<boolean> }) {
   const p = `p${ticket.id}`;
+  const { data: settings } = useResource((signal) => api.get<ProviderSettings>("/api/settings/provider", signal), "provider-settings");
+  const provider: ProviderId = ticket.provider ?? settings?.provider ?? "claude";
   return (
     <dl className="grid grid-cols-[8rem_1fr] items-center gap-x-3 gap-y-2 text-sm">
       <dt className="text-muted">Status</dt>
@@ -402,14 +408,34 @@ const Properties = memo(function Properties({ ticket, patch }: { ticket: TicketD
         {ticket.branch ?? <span className="font-ui text-sm text-muted italic">None yet</span>}
       </dd>
 
-      <dt><label htmlFor={`${p}-model`} className="text-muted">Model</label></dt>
+      <dt><label htmlFor={`${p}-agent`} className="text-muted">Agent</label></dt>
       <dd className="m-0">
-        <select id={`${p}-model`} className={controlClass} value={ticket.model ?? ""} onChange={(e) => void patch({ model: e.target.value || null })}>
-          <option value="">Default (from Settings)</option>
-          {MODEL_CHOICES.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
+        <select id={`${p}-agent`} className={controlClass} value={ticket.provider ?? ""} onChange={(e) => void patch({ provider: e.target.value || null })}>
+          <option value="">Default ({settings ? PROVIDER_LABELS[settings.provider] : "from Settings"})</option>
+          {PROVIDERS.map((id) => (
+            <option key={id} value={id}>{PROVIDER_LABELS[id]}</option>
           ))}
         </select>
+      </dd>
+
+      <dt><label htmlFor={`${p}-model`} className="text-muted">Model</label></dt>
+      <dd className="m-0">
+        {provider === "codex" ? (
+          <TextField
+            id={`${p}-model`}
+            placeholder="Default (from Settings)"
+            value={ticket.model ?? ""}
+            onCommit={(v) => patch({ model: v.trim() || null })}
+          />
+        ) : (
+          <select id={`${p}-model`} className={controlClass} value={ticket.model ?? ""} onChange={(e) => void patch({ model: e.target.value || null })}>
+            <option value="">Default (from Settings)</option>
+            {ticket.model && !MODEL_CHOICES.some((m) => m.id === ticket.model) && <option value={ticket.model}>{ticket.model}</option>}
+            {MODEL_CHOICES.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        )}
       </dd>
     </dl>
   );

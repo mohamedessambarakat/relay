@@ -80,6 +80,7 @@ export interface LogLine {
 export interface TicketDetail extends TicketSummary {
   description: string;
   toggles: Toggles;
+  provider: ProviderId | null; // null = use Settings
   model: string | null; // null = use Settings
   branch: string | null;
   workspace: string | null;
@@ -89,6 +90,18 @@ export interface TicketDetail extends TicketSummary {
   log: LogLine[];
 }
 
+/** The coding agent CLIs Relay can run. */
+export const PROVIDERS = ["claude", "codex"] as const;
+export type ProviderId = (typeof PROVIDERS)[number];
+export const PROVIDER_LABELS: Record<ProviderId, string> = { claude: "Claude Code", codex: "Codex" };
+
+/** Default provider for new runs, and Codex's main model ("" = Codex's own config default). */
+export interface ProviderSettings {
+  provider: ProviderId;
+  codexModel: string;
+}
+
+/** Claude model aliases. Codex models are free text, since its model list depends on the account. */
 export const MODEL_CHOICES = [
   { id: "fable", name: "Fable 5.1" },
   { id: "opus", name: "Opus 5.5" },

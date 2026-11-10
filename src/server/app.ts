@@ -11,7 +11,7 @@ import type { EventBus } from "./events.ts";
 import { requestGuard, securityHeaders } from "./security.ts";
 import { routeComment } from "./rules.ts";
 import * as s from "./schemas.ts";
-import type { BoardEvent, Comment, ModelRole, Status, SystemState } from "../shared/types.ts";
+import type { BoardEvent, Comment, ModelRole, ProviderSettings, Status, SystemState } from "../shared/types.ts";
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -30,6 +30,8 @@ export interface RunnerPort {
 export interface ModelSettingsPort {
   list(): ModelRole[];
   save(input: { main: string; agents: Record<string, string> }): ModelRole[];
+  providerSettings(): ProviderSettings;
+  saveProviderSettings(input: ProviderSettings): ProviderSettings;
 }
 
 export interface AppDeps {
@@ -173,6 +175,8 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/settings/models", (c) => c.json(models.list()));
   app.put("/api/settings/models", async (c) => c.json(models.save(await parse(c, s.modelSettingsSchema))));
+  app.get("/api/settings/provider", (c) => c.json(models.providerSettings()));
+  app.put("/api/settings/provider", async (c) => c.json(models.saveProviderSettings(await parse(c, s.providerSettingsSchema))));
 
   app.get("/api/system", (c) => c.json(runner.systemState()));
 

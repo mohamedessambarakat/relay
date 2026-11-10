@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStreamLine } from "./stream.ts";
+import { parseCodexLine, parseStreamLine } from "./stream.ts";
 import { parseAgentFile } from "./models.ts";
 
 describe("parseStreamLine", () => {
@@ -33,6 +33,35 @@ describe("parseStreamLine", () => {
   it("ends a turn on result and flags 429s as the limit", () => {
     const ev = parseStreamLine(JSON.stringify({ type: "result", is_error: true, api_error_status: 429, result: "limit" }));
     expect(ev.map((e) => e.kind)).toEqual(["limit", "log", "turn-end"]);
+  });
+});
+
+describe("parseCodexLine", () => {
+  const line = (o: unknown) => parseCodexLine(JSON.stringify(o));
+
+  it("reads the thread id as the session", () => {
+    expect(line({ type: "thread.started", thread_id: "th" })[0]).toEqual({ kind: "session", sessionId: "th" });
+  });
+
+  it("logs messages, shell commands, MCP calls and file edits", () => {
+    expect(line({ type: "item.completed", item: { type: "agent_message", text: "PONG" } })).toEqual([{ kind: "log", level: "text", text: "PONG" }]);
+    expect(line({ type: "item.started", item: { type: "command_execution", command: "pnpm test" } })).toEqual([{ kind: "log", level: "tool", text: "shell pnpm test" }]);
+    expect(line({ type: "item.started", item: { type: "mcp_tool_call", server: "relay", tool: "get_ticket" } })).toEqual([{ kind: "log", level: "tool", text: "relay/get_ticket" }]);
+    expect(line({ type: "item.completed", item: { type: "file_change", changes: [{ path: "a.ts" }, { path: "b.ts" }] } })).toEqual([{ kind: "log", level: "tool", text: "edit a.ts, b.ts" }]);
+  });
+
+  it("ends a turn on turn.completed and turn.failed", () => {
+    expect(line({ type: "turn.completed", usage: {} }).map((e) => e.kind)).toEqual(["log", "turn-end"]);
+    const failed = line({ type: "turn.failed", error: { message: "model_not_found" } });
+    expect(failed.map((e) => e.kind)).toEqual(["log", "turn-end"]);
+    expect(failed[1]).toEqual({ kind: "turn-end", isError: true });
+  });
+
+  it("treats usage-limit errors as the limit", () => {
+    expect(line({ type: "turn.failed", error: { message: "You've hit your usage limit." } }).map((e) => e.kind)).toEqual(["limit", "log", "turn-end"]);
+    // A top-level error may be a transient retry, so it's only logged.
+    expect(line({ type: "error", message: "429 Too Many Requests, retrying" }).map((e) => e.kind)).toEqual(["log"]);
+    expect(line({ type: "error", message: "status 400 model_not_found" }).map((e) => e.kind)).toEqual(["log"]);
   });
 });
 

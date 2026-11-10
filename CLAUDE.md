@@ -1,6 +1,6 @@
 # Relay
 
-Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to **Agent Ready** makes Claude work on it end to end in the background, using the user's Claude subscription via headless `claude -p`. Not an API key.
+Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to **Agent Ready** makes a coding agent work on it end to end in the background, using the user's own subscription: Claude Code via headless `claude -p`, or Codex via `codex exec`. Not an API key. Meant to be shared publicly, so nothing may assume this machine's user or paths.
 
 ## Stack
 - Node + TypeScript (strict), Hono server, SQLite (built-in `node:sqlite`, no native module), React + Vite + Tailwind board
@@ -17,7 +17,7 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 
 ## Structure
 - `src/server/`: API, database, ticket rules
-- `src/agent/`: runs Claude, queue, live log
+- `src/agent/`: runs the agent CLIs, queue, live log. `providers.ts` holds everything CLI-specific (launch args, output parsing); add a new agent CLI there
 - `src/mcp/`: Relay MCP server (tools Claude uses to talk to Relay)
 - `src/board/`: the web board (React). Shared components in `src/board/components/`, color tokens in the Tailwind v4 `@theme` block in `src/board/index.css`
 - `src/shared/`: types used by server and board
@@ -30,11 +30,12 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 - **Agent Ready vs In Progress:** Agent Ready means waiting for a slot. The runner moves a ticket to In Progress when its run starts (users can't), and back to Agent Ready for a retry or a usage-limit wait. Moving a ticket out of In Progress kills the run.
 - **Ticket fields:** title, description (markdown), status, priority, labels, due date, optional linked folder/repo, comments, attachments, and authorization toggles: Send, Push, Publish, Merge, Deploy (on by default) and Spend (off by default).
 - **Spend limits:** when Spend is on, the agent reads the task first and lists the paid services it will need (service, unit, what for), e.g. Anthropic API in USD, ElevenLabs in credits. It pre-fills each max with its own estimate of what the task needs, so the run isn't blocked waiting for one. Service and unit are read-only to the user; the user can change any max. The agent tracks spend per service, reports it in comments, and moves to Blocked before it would pass a max. Relay can't meter third-party usage itself, so these caps rely on the agent's own tracking.
-- **Models:** a Settings page sets the model per role: the main agent (passed as `--model`) and each of the user's own agents in `~/.claude/agents` (re-declared through `--agents` with the same prompt and the chosen model). Built-in subagents (Explore, Plan, general-purpose) aren't listed: overriding them through `--agents` would replace their built-in prompts. A ticket can override only the main agent's model; "Default" uses Settings.
+- **Providers:** Claude Code and Codex. Settings sets the default; a ticket can override it. A session is only resumed by the provider that created it (`session_provider`). Claude is persistent (one process per run, comments over stdin). Codex is one-shot (one `codex exec` per turn): `@agent` comments on a running Codex ticket are held and sent by resuming the session when the turn ends; a turn that ends without a status gets one nudge, then counts as a failure.
+- **Models:** a Settings page sets the Codex model (free text, empty = Codex's own config) and the Claude model per role: the main agent (passed as `--model`) and each of the user's own agents in `~/.claude/agents` (re-declared through `--agents` with the same prompt and the chosen model). Built-in subagents (Explore, Plan, general-purpose) aren't listed: overriding them through `--agents` would replace their built-in prompts. A ticket can override only the main agent's model; "Default" uses Settings.
 - **Board UI:** Console look (dark, monospace chrome, split screen with the live log first in the ticket panel) with Jira-style column cards.
 - **Agent API:** the Relay MCP server (`src/mcp/server.ts`) calls `/api/agent/*` with a per-run bearer token that only works for that run's ticket. `set_status` is refused until the agent has commented during the run.
 - **Queue:** up to 3 tickets run in parallel. Extra Agent Ready tickets wait, ordered by highest priority, then oldest.
-- **Run:** `claude -p` with prompts skipped (`--dangerously-skip-permissions`) and the user's normal Claude setup (global CLAUDE.md, skills, MCP servers) plus the Relay MCP.
+- **Run:** `claude -p` with prompts skipped (`--dangerously-skip-permissions`), or `codex exec --dangerously-bypass-approvals-and-sandbox`, with the user's normal setup (global instructions, skills, MCP servers) plus the Relay MCP.
 - **Agent behavior follows `~/.claude/skills/afk`:**
   - Start straight away with no intake pass, and never ask.
   - When something is unclear, take the option that changes least and is easiest to undo, and record it in a comment.
@@ -53,7 +54,7 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 - **Keep awake and auto-start:** keep the PC awake while tickets are running or queued, and auto-start Relay at Windows login.
 
 ## Security
-- Listen on localhost only. Anything that can reach Relay can run Claude with full permissions.
+- Listen on localhost only. Anything that can reach Relay can run an agent with full permissions.
 - Reject requests whose Origin/Host isn't Relay's own page. This blocks cross-site requests from triggering runs.
 - Validate every request body. Store attachments with generated file names and a ~25 MB cap per file.
 
@@ -72,3 +73,12 @@ Checked by spike on 2026-11-08 (Claude Code 2.1.319):
 - Spawn `claude` directly (`C:\Users\<user>\.local\bin\claude.exe`, found by `claudeBin()`), not through a shell.
 - In PowerShell scripts, check Relay via `127.0.0.1`: Windows PowerShell tries IPv6 for `localhost` first and stalls, since Relay listens on IPv4 only.
 - Start scripts call `node` directly: at login the Windows PATH may not include pnpm.
+
+Codex, checked by spike on 2026-11-10 (Codex CLI 0.154.0):
+- `codex exec --json` prints JSONL: `thread.started` (`thread_id` = session), `turn.started`, `item.started`/`item.completed` (`agent_message`, `command_execution`, `mcp_tool_call`, `file_change`, `error` = warning), `turn.completed`, `turn.failed`, `error`. The process exits after one turn.
+- `codex exec resume <thread_id> -` keeps the earlier conversation. An unknown id exits 1 with no `thread.started`.
+- The Relay MCP server and Relay's instructions are passed per run with `-c mcp_servers.relay.*=...` and `-c developer_instructions=...`, so the user's `~/.codex/config.toml` is never edited.
+- `codex queue --thread <id>` accepts a message, but a running `codex exec` never receives it, so Relay doesn't use it.
+- npm installs Codex as a `.cmd` shim on Windows; spawn `node <npm>/node_modules/@openai/codex/bin/codex.js` instead (`codexBin()`).
+- A model the account can't use fails the turn with HTTP 400 `model_not_found`. `codex debug models` lists the catalog.
+- Usage limit: not triggered. The runner treats `error`/`turn.failed` text matching "usage limit", "rate limit", "too many requests" or 429 as the limit and waits an hour. Inferred.

@@ -1,7 +1,8 @@
-import { MODEL_CHOICES, type ModelRole } from "../shared/types.ts";
+import { useState } from "react";
+import { MODEL_CHOICES, PROVIDER_LABELS, PROVIDERS, type ModelRole, type ProviderId, type ProviderSettings } from "../shared/types.ts";
 import { api, errorMessage } from "./api.ts";
 import { Button } from "./components/Button.tsx";
-import { controlClass } from "./components/Field.tsx";
+import { controlClass, TextField } from "./components/Field.tsx";
 import { useToast } from "./components/Toast.tsx";
 import { useResource } from "./hooks.ts";
 
@@ -34,9 +35,10 @@ export function Settings() {
 
   return (
     <div className="flex-1 overflow-auto px-4 py-4 md:px-5">
-      <h2 className="mb-1 text-base font-semibold">Models</h2>
+      <AgentSettings />
+      <h2 className="mb-1 mt-8 text-base font-semibold">Claude models</h2>
       <p className="mb-4 max-w-2xl font-ui text-sm text-muted">
-        Pick which model each role uses. "Not set (inherits)" means the agent has no model of its own and uses the main agent's model. Built-in subagents (Explore, Plan, general-purpose) aren't listed because overriding them would replace their built-in prompts.
+        Used when a ticket runs on Claude Code. Pick which model each role uses. "Not set (inherits)" means the agent has no model of its own and uses the main agent's model. Built-in subagents (Explore, Plan, general-purpose) aren't listed because overriding them would replace their built-in prompts.
       </p>
       {loading && <p role="status" className="text-muted">Loading models…</p>}
       {error && (
@@ -78,5 +80,65 @@ export function Settings() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Default agent CLI for tickets, and the Codex model. */
+function AgentSettings() {
+  const toast = useToast();
+  const { data, error, retry, setData } = useResource((signal) => api.get<ProviderSettings>("/api/settings/provider", signal), "provider-settings");
+  const [saving, setSaving] = useState(false);
+
+  const save = async (next: ProviderSettings) => {
+    if (!data) return;
+    const prev = data;
+    setData(() => next);
+    setSaving(true);
+    try {
+      const saved = await api.put<ProviderSettings>("/api/settings/provider", next);
+      setData(() => saved);
+      toast("Saved", "success");
+      return true;
+    } catch (e) {
+      setData(() => prev);
+      toast(errorMessage(e));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="agent-settings">
+      <h2 id="agent-settings" className="mb-1 text-base font-semibold">Agent</h2>
+      <p className="mb-4 max-w-2xl font-ui text-sm text-muted">
+        Which coding agent runs tickets that don't pick one. Each ticket can override it. Codex runs one turn at a time, so an @agent comment on a running Codex ticket is sent when the current turn ends.
+      </p>
+      {error && (
+        <div role="alert" className="flex flex-col items-start gap-2">
+          <p className="text-blocked">Couldn't load agent settings: {error}</p>
+          <Button onClick={retry}>Retry</Button>
+        </div>
+      )}
+      {data && (
+        <dl className="grid max-w-xl grid-cols-[8rem_1fr] items-center gap-x-3 gap-y-2 text-sm">
+          <dt><label htmlFor="default-agent" className="text-muted">Default agent</label></dt>
+          <dd className="m-0">
+            <select id="default-agent" className={controlClass} value={data.provider} disabled={saving} onChange={(e) => void save({ ...data, provider: e.target.value as ProviderId })}>
+              {PROVIDERS.map((id) => <option key={id} value={id}>{PROVIDER_LABELS[id]}</option>)}
+            </select>
+          </dd>
+          <dt><label htmlFor="codex-model" className="text-muted">Codex model</label></dt>
+          <dd className="m-0">
+            <TextField
+              id="codex-model"
+              placeholder="Codex's own default (~/.codex/config.toml)"
+              value={data.codexModel}
+              onCommit={(v) => save({ ...data, codexModel: v.trim() })}
+            />
+          </dd>
+        </dl>
+      )}
+    </section>
   );
 }

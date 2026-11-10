@@ -62,3 +62,63 @@ export function parseStreamLine(line: string): StreamEvent[] {
   }
   return out;
 }
+
+// Codex reports usage limits as error text; the exact wording wasn't seen in testing, so this is a best guess.
+const CODEX_LIMIT = /usage limit|rate limit|too many requests|\b429\b/i;
+const LIMIT_WAIT_MS = 60 * 60 * 1000;
+
+/** Only a failed turn counts as the limit: top-level errors can be transient retries within a turn. */
+function codexError(message: string, out: StreamEvent[], turnFailed: boolean) {
+  if (turnFailed && CODEX_LIMIT.test(message)) out.push({ kind: "limit", resetsAt: new Date(Date.now() + LIMIT_WAIT_MS) });
+  out.push({ kind: "log", level: "error", text: clip(message) });
+}
+
+/** Turns one line of `codex exec --json` into what the runner cares about. */
+export function parseCodexLine(line: string): StreamEvent[] {
+  let m: Record<string, unknown>;
+  try {
+    m = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return line.trim() ? [{ kind: "log", level: "info", text: clip(line) }] : [];
+  }
+  const out: StreamEvent[] = [];
+  const item = (m.item ?? {}) as Record<string, unknown>;
+  switch (m.type) {
+    case "thread.started":
+      if (typeof m.thread_id === "string") {
+        out.push({ kind: "session", sessionId: m.thread_id });
+        out.push({ kind: "log", level: "info", text: "Codex session started" });
+      }
+      break;
+    case "item.started":
+      if (item.type === "command_execution") out.push({ kind: "log", level: "tool", text: `shell ${clip(String(item.command ?? ""), 160)}` });
+      else if (item.type === "mcp_tool_call") out.push({ kind: "log", level: "tool", text: `${String(item.server)}/${String(item.tool)}` });
+      else if (item.type === "web_search") out.push({ kind: "log", level: "tool", text: `web_search ${clip(String(item.query ?? ""), 160)}` });
+      break;
+    case "item.completed":
+      if (item.type === "agent_message" && typeof item.text === "string" && item.text.trim()) {
+        out.push({ kind: "log", level: "text", text: clip(item.text, 600) });
+      } else if (item.type === "file_change" && Array.isArray(item.changes)) {
+        const paths = (item.changes as { path?: string }[]).map((c) => c.path).filter(Boolean).join(", ");
+        out.push({ kind: "log", level: "tool", text: `edit ${clip(paths, 160)}` });
+      } else if (item.type === "error" && typeof item.message === "string") {
+        // Item-level errors are warnings (e.g. unknown model metadata); the turn carries on.
+        out.push({ kind: "log", level: "info", text: clip(item.message) });
+      }
+      break;
+    case "turn.completed":
+      out.push({ kind: "log", level: "result", text: "Turn finished" });
+      out.push({ kind: "turn-end", isError: false });
+      break;
+    case "turn.failed": {
+      const msg = (m.error as { message?: string } | undefined)?.message ?? "unknown error";
+      codexError(`Turn failed: ${msg}`, out, true);
+      out.push({ kind: "turn-end", isError: true });
+      break;
+    }
+    case "error":
+      if (typeof m.message === "string") codexError(m.message, out, false);
+      break;
+  }
+  return out;
+}
