@@ -5,7 +5,8 @@ import { openDb } from "./db.ts";
 import { EventBus } from "./events.ts";
 import { Store } from "./store.ts";
 import { createApp } from "./app.ts";
-import { Runner, claudeBin } from "../agent/runner.ts";
+import { Runner } from "../agent/runner.ts";
+import { claudeBin, codexBin } from "../agent/providers.ts";
 import { ModelSettings } from "../agent/models.ts";
 import { ntfyNotifier } from "../agent/notify.ts";
 import { KeepAwake } from "../agent/keepawake.ts";
@@ -47,6 +48,8 @@ const app = createApp({
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port }, () => {
   console.log(`[relay] listening on http://localhost:${port}`);
   console.log(`[relay] Claude CLI: ${claudeBin()}`);
+  const codex = codexBin();
+  console.log(`[relay] Codex CLI: ${[codex.command, ...codex.prefix].join(" ")}`);
   if (!notifier.enabled) console.log("[relay] NTFY_TOPIC isn't set, so phone pushes are off");
   runner.recover();
 });

@@ -1,7 +1,10 @@
 import { z } from "zod";
-import { MODEL_CHOICES, STATUSES, TOGGLE_KEYS } from "../shared/types.ts";
+import { MODEL_CHOICES, PROVIDERS, STATUSES, TOGGLE_KEYS } from "../shared/types.ts";
 
 const modelId = z.enum(MODEL_CHOICES.map((m) => m.id) as [string, ...string[]]);
+// Codex model names vary by account, so any plain model name is accepted. It's passed as one CLI argument, never through a shell.
+const anyModel = z.string().trim().regex(/^[A-Za-z0-9][\w.:-]{0,63}$/, "Use a model name like gpt-5.6-luna");
+const provider = z.enum(PROVIDERS);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
 export const toggleSchema = z
@@ -17,7 +20,8 @@ const ticketFields = {
   dueDate: isoDate.nullable(),
   linkedPath: z.string().trim().min(1).max(500).nullable(),
   toggles: toggleSchema,
-  model: modelId.nullable(),
+  provider: provider.nullable(),
+  model: anyModel.nullable(),
 };
 
 export const createTicketSchema = z
@@ -37,6 +41,10 @@ export const spendMaxSchema = z.object({ max: z.number().finite().min(0).max(1e9
 
 export const modelSettingsSchema = z
   .object({ main: modelId, agents: z.record(z.string().min(1).max(100), modelId) })
+  .strict();
+
+export const providerSettingsSchema = z
+  .object({ provider, codexModel: z.union([z.literal(""), anyModel]) })
   .strict();
 
 // Agent (MCP) calls

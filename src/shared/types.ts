@@ -19,7 +19,8 @@ export const PRIORITY_LABELS: Record<Priority, string> = { 0: "None", 1: "Low", 
 export const TOGGLE_KEYS = ["send", "push", "publish", "merge", "deploy", "spend"] as const;
 export type ToggleKey = (typeof TOGGLE_KEYS)[number];
 export type Toggles = Record<ToggleKey, boolean>;
-export const DEFAULT_TOGGLES: Toggles = { send: true, push: true, publish: true, merge: true, deploy: true, spend: false };
+// Everything outward starts off, so a new ticket can't send, push or deploy until the user allows it.
+export const DEFAULT_TOGGLES: Toggles = { send: false, push: false, publish: false, merge: false, deploy: false, spend: false };
 
 /** What the runner is doing with a ticket, separate from its board status. */
 export type RunState = "idle" | "queued" | "running" | "waiting_limit";
@@ -80,6 +81,7 @@ export interface LogLine {
 export interface TicketDetail extends TicketSummary {
   description: string;
   toggles: Toggles;
+  provider: ProviderId | null; // null = use Settings
   model: string | null; // null = use Settings
   branch: string | null;
   workspace: string | null;
@@ -89,6 +91,18 @@ export interface TicketDetail extends TicketSummary {
   log: LogLine[];
 }
 
+/** The coding agent CLIs Relay can run. */
+export const PROVIDERS = ["claude", "codex"] as const;
+export type ProviderId = (typeof PROVIDERS)[number];
+export const PROVIDER_LABELS: Record<ProviderId, string> = { claude: "Claude Code", codex: "Codex" };
+
+/** Default provider for new runs, and Codex's main model ("" = Codex's own config default). */
+export interface ProviderSettings {
+  provider: ProviderId;
+  codexModel: string;
+}
+
+/** Claude model aliases. Codex models are free text, since its model list depends on the account. */
 export const MODEL_CHOICES = [
   { id: "fable", name: "Fable 5.1" },
   { id: "opus", name: "Opus 5.5" },

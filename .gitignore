@@ -3,5 +3,4 @@ dist/
 data/
 workspaces/
 .env
-CLAUDE.md
 .playwright-mcp/

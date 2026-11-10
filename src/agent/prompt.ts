@@ -10,7 +10,7 @@ const TOGGLE_MEANING: Record<keyof Toggles, string> = {
   spend: "spend money or paid credits",
 };
 
-/** Appended to Claude's system prompt for every Relay run. */
+/** Added to the agent's system prompt for every Relay run. */
 export function systemPrompt(t: TicketDetail, ws: Workspace): string {
   const allowed = TOGGLE_KEYS.filter((k) => t.toggles[k]);
   const denied = TOGGLE_KEYS.filter((k) => !t.toggles[k]);
@@ -79,8 +79,8 @@ export function resumeMessage(t: TicketDetail, comment: Comment | null): string 
     : "The user moved the ticket back to Agent Ready. Call get_ticket to see what changed, continue the work, then finish as usual.";
 }
 
-export const injectMessage = (comment: Comment) =>
-  `New comment from the user on this ticket (handle it as part of your current work):\n\n${comment.body}`;
+export const injectMessage = (body: string) =>
+  `New comment from the user on this ticket (handle it as part of your current work):\n\n${body}`;
 
 export const limitResumeMessage = "The usage limit has reset. Continue where you left off, then finish as usual.";
 

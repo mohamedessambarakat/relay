@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Store } from "../server/store.ts";
 import type { ModelSettingsPort } from "../server/app.ts";
-import type { ModelRole } from "../shared/types.ts";
+import { MODEL_CHOICES, type ModelRole, type ProviderId, type ProviderSettings } from "../shared/types.ts";
 
 export interface AgentDef {
   name: string;
@@ -19,6 +19,9 @@ interface SavedModels {
 }
 
 const DEFAULT_MAIN = "opus";
+// A ticket's model may predate a change of the default provider, so check it fits before using it.
+const isClaudeModel = (m: string) => MODEL_CHOICES.some((c) => c.id === m) || m.startsWith("claude-");
+const DEFAULT_PROVIDER: ProviderSettings = { provider: "claude", codexModel: "" };
 
 /** Parses an agent file: YAML-ish frontmatter (one `key: value` per line) and a prompt body. */
 export function parseAgentFile(text: string): AgentDef | null {
@@ -81,8 +84,27 @@ export class ModelSettings implements ModelSettingsPort {
     return this.list();
   }
 
+  providerSettings(): ProviderSettings {
+    return { ...DEFAULT_PROVIDER, ...this.store.getSetting<Partial<ProviderSettings>>("provider", {}) };
+  }
+
+  saveProviderSettings(input: ProviderSettings): ProviderSettings {
+    this.store.setSetting("provider", input);
+    return this.providerSettings();
+  }
+
+  providerFor(ticketProvider: ProviderId | null): ProviderId {
+    return ticketProvider ?? this.providerSettings().provider;
+  }
+
+  /** Claude's main model. */
   mainModel(ticketModel: string | null): string {
-    return ticketModel ?? this.saved().main;
+    return ticketModel && isClaudeModel(ticketModel) ? ticketModel : this.saved().main;
+  }
+
+  /** Codex's main model, or null to leave it to Codex's own config. */
+  codexModel(ticketModel: string | null): string | null {
+    return ticketModel && !isClaudeModel(ticketModel) ? ticketModel : this.providerSettings().codexModel || null;
   }
 
   /** `--agents` JSON re-declaring each user agent whose model was changed in Settings. */
