@@ -28,7 +28,7 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 ## Project rules
 - **Statuses are fixed:** Backlog → Todo → Agent Ready → In Progress → Blocked → Review → Done. Only the user moves tickets to Done.
 - **Agent Ready vs In Progress:** Agent Ready means waiting for a slot. The runner moves a ticket to In Progress when its run starts (users can't), and back to Agent Ready for a retry or a usage-limit wait. Moving a ticket out of In Progress kills the run.
-- **Ticket fields:** title, description (markdown), status, priority, labels, due date, optional linked folder/repo, comments, attachments, and authorization toggles: Send, Push, Publish, Merge, Deploy (on by default) and Spend (off by default).
+- **Ticket fields:** title, description (markdown), status, priority, labels, due date, optional linked folder/repo, comments, attachments, and authorization toggles: Send, Push, Publish, Merge, Deploy and Spend, all off by default.
 - **Spend limits:** when Spend is on, the agent reads the task first and lists the paid services it will need (service, unit, what for), e.g. Anthropic API in USD, ElevenLabs in credits. It pre-fills each max with its own estimate of what the task needs, so the run isn't blocked waiting for one. Service and unit are read-only to the user; the user can change any max. The agent tracks spend per service, reports it in comments, and moves to Blocked before it would pass a max. Relay can't meter third-party usage itself, so these caps rely on the agent's own tracking.
 - **Providers:** Claude Code and Codex. Settings sets the default; a ticket can override it. A session is only resumed by the provider that created it (`session_provider`). Claude is persistent (one process per run, comments over stdin). Codex is one-shot (one `codex exec` per turn): `@agent` comments on a running Codex ticket are held and sent by resuming the session when the turn ends; a turn that ends without a status gets one nudge, then counts as a failure.
 - **Models:** a Settings page sets the Codex model (free text, empty = Codex's own config) and the Claude model per role: the main agent (passed as `--model`) and each of the user's own agents in `~/.claude/agents` (re-declared through `--agents` with the same prompt and the chosen model). Built-in subagents (Explore, Plan, general-purpose) aren't listed: overriding them through `--agents` would replace their built-in prompts. A ticket can override only the main agent's model; "Default" uses Settings.
@@ -36,7 +36,7 @@ Minimal local task board (Jira/Linear-style) for one person. Moving a ticket to 
 - **Agent API:** the Relay MCP server (`src/mcp/server.ts`) calls `/api/agent/*` with a per-run bearer token that only works for that run's ticket. `set_status` is refused until the agent has commented during the run.
 - **Queue:** up to 3 tickets run in parallel. Extra Agent Ready tickets wait, ordered by highest priority, then oldest.
 - **Run:** `claude -p` with prompts skipped (`--dangerously-skip-permissions`), or `codex exec --dangerously-bypass-approvals-and-sandbox`, with the user's normal setup (global instructions, skills, MCP servers) plus the Relay MCP.
-- **Agent behavior follows `~/.claude/skills/afk`:**
+- **Agent behavior** (set in `src/agent/prompt.ts`):
   - Start straight away with no intake pass, and never ask.
   - When something is unclear, take the option that changes least and is easiest to undo, and record it in a comment.
   - Anything that fails twice goes to Blocked.

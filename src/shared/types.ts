@@ -19,7 +19,8 @@ export const PRIORITY_LABELS: Record<Priority, string> = { 0: "None", 1: "Low", 
 export const TOGGLE_KEYS = ["send", "push", "publish", "merge", "deploy", "spend"] as const;
 export type ToggleKey = (typeof TOGGLE_KEYS)[number];
 export type Toggles = Record<ToggleKey, boolean>;
-export const DEFAULT_TOGGLES: Toggles = { send: true, push: true, publish: true, merge: true, deploy: true, spend: false };
+// Everything outward starts off, so a new ticket can't send, push or deploy until the user allows it.
+export const DEFAULT_TOGGLES: Toggles = { send: false, push: false, publish: false, merge: false, deploy: false, spend: false };
 
 /** What the runner is doing with a ticket, separate from its board status. */
 export type RunState = "idle" | "queued" | "running" | "waiting_limit";

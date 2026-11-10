@@ -28,11 +28,11 @@ describe("openDb migration", () => {
 });
 
 describe("Store", () => {
-  it("creates tickets with default toggles (Spend off)", () => {
+  it("creates tickets with every outward toggle off", () => {
     const t = store.createTicket({ title: "Write README" });
     expect(t.key).toBe(`R-${t.id}`);
     expect(t.status).toBe("backlog");
-    expect(t.toggles).toEqual({ send: true, push: true, publish: true, merge: true, deploy: true, spend: false });
+    expect(t.toggles).toEqual({ send: false, push: false, publish: false, merge: false, deploy: false, spend: false });
   });
 
   it("orders the queue by priority, then oldest", async () => {
